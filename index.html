@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Star Defender</title>
+  <style>
+    :root {
+      --bg1: #0b1020;
+      --bg2: #121a2d;
+      --panel: #18233d;
+      --text: #eaf2ff;
+      --accent: #6ee7ff;
+      --accent2: #8bffb0;
+      --danger: #ff6b6b;
+      --warning: #ffd166;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: radial-gradient(circle at top, #1d2947, #090d18 60%);
+      color: var(--text);
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    .game-shell {
+      background: rgba(20, 27, 42, 0.9);
+      border: 2px solid rgba(255,255,255,0.08);
+      border-radius: 16px;
+      padding: 18px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.45);
+    }
+
+    canvas {
+      display: block;
+      width: min(80vw, 480px);
+      height: auto;
+      background: linear-gradient(to bottom, var(--bg2), var(--bg1));
+      border: 2px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+    }
+
+    .hud {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 12px;
+      gap: 12px;
+      font-weight: bold;
+      letter-spacing: 0.04em;
+    }
+
+    .score {
+      color: var(--accent);
+    }
+
+    .controls {
+      color: rgba(255,255,255,0.7);
+      font-size: 13px;
+    }
+
+    button {
+      border: none;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #06202d;
+      padding: 10px 16px;
+      border-radius: 10px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    button:hover {
+      filter: brightness(1.08);
+    }
+  </style>
+</head>
+<body>
+  <div class="game-shell">
+    <canvas id="game" width="480" height="640"></canvas>
+    <div class="hud">
+      <div class="score">Score: <span id="score">0</span></div>
+      <div class="controls">Move: A/D or ←/→ | Shoot: Space</div>
+      <button id="restart">Restart</button>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
+    const scoreEl = document.getElementById("score");
+    const restartBtn = document.getElementById("restart");
+
+    const keys = {};
+    const state = {
+      running: true,
+      score: 0,
+      cooldown: 0,
+      spawnTimer: 0,
+      stars: [],
+      bullets: [],
+      enemies: [],
+      particles: [],
+      player: {
+        x: canvas.width / 2 - 40,
+        y: canvas.height - 56,
+        w: 80,
+        h: 20,
+        speed: 6
+      }
+    };
+
+    function resetGame() {
+      state.running = true;
+      state.score = 0;
+      state.cooldown = 0;
+      state.spawnTimer = 0;
+      state.stars = [];
+      state.bullets = [];
+      state.enemies = [];
+      state.particles = [];
+      state.player.x = canvas.width / 2 - 40;
+      state.player.y = canvas.height - 56;
+      scoreEl.textContent = "0";
+      for (let i = 0; i < 60; i++) {
+        state.stars.push({
+          x: Math.random() * canvas.width,
+          y: Math.random() * canvas.height,
+          r: Math.random() * 2.2 + 0.8,
+          speed: Math.random() * 0.7 + 0.2
+        });
+      }
+    }
+
+    function shoot() {
+      if (!state.running) return;
+      if (state.cooldown > 0) return;
+
+      state.bullets.push({
+        x: state.player.x + state.player.w / 2 - 2,
+        y: state.player.y - 12,
+        w: 4,
+        h: 14,
+        speed: 9
+      });
+
+      state.cooldown = 180;
+    }
+
+    function spawnEnemy() {
+      const size = 18 + Math.random() * 26;
+      const x = Math.random() * (canvas.width - size);
+      state.enemies.push({
+        x,
+        y: -size - 10,
+        w: size,
+        h: size,
+        speed: 1.6 + Math.random() * 2.4
+      });
+    }
+
+    function createParticles(x, y, amount, color) {
+      for (let i = 0; i < amount; i++) {
+        state.particles.push({
+          x,
+          y,
+          vx: (Math.random() - 0.5) * 5,
+          vy: (Math.random() - 0.5) * 5,
+          life: 25 + Math.random() * 25,
+          color
+        });
+      }
+    }
+
+    function hitTest(a, b) {
+      return (
+        a.x < b.x + b.w &&
+        a.x + a.w > b.x &&
+        a.y < b.y + b.h &&
+        a.y + a.h > b.y
+      );
+    }
+
+    function update(delta) {
+      if (!state.running) return;
+
+      state.cooldown = Math.max(0, state.cooldown - delta);
+
+      if (keys["ArrowLeft"] || keys["a"]) {
+        state.player.x -= state.player.speed;
+      }
+      if (keys["ArrowRight"] || keys["d"]) {
+        state.player.x += state.player.speed;
+      }
+
+      state.player.x = Math.max(0, Math.min(canvas.width - state.player.w, state.player.x));
+
+      if (keys[" "] || keys["Space"]) {
+        shoot();
+      }
+
+      state.spawnTimer += delta;
+      if (state.spawnTimer > 700) {
+        state.spawnTimer = 0;
+        spawnEnemy();
+      }
+
+      for (const star of state.stars) {
+        star.y += star.speed;
+        if (star.y > canvas.height) {
+          star.y = -5;
+          star.x = Math.random() * canvas.width;
+        }
+      }
+
+      for (let i = state.bullets.length - 1; i >= 0; i--) {
+        const bullet = state.bullets[i];
+        bullet.y -= bullet.speed;
+
+        if (bullet.y + bullet.h < 0) {
+          state.bullets.splice(i, 1);
+          continue;
+        }
+
+        for (let j = state.enemies.length - 1; j >= 0; j--) {
+          const enemy = state.enemies[j];
+          if (hitTest(bullet, enemy)) {
+            state.bullets.splice(i, 1);
+            state.enemies.splice(j, 1);
+            state.score += 10;
+            scoreEl.textContent = String(state.score);
+            createParticles(enemy.x + enemy.w / 2, enemy.y + enemy.h / 2, 20, "#8bffb0");
+            break;
+          }
+        }
+      }
+
+      for (let i = state.enemies.length - 1; i >= 0; i--) {
+        const enemy = state.enemies[i];
+        enemy.y += enemy.speed;
+
+        if (enemy.y + enemy.h >= state.player.y &&
+            enemy.x + enemy.w > state.player.x &&
+            enemy.x < state.player.x + state.player.w) {
+          state.running = false;
+          createParticles(state.player.x + state.player.w / 2, state.player.y + state.player.h / 2, 60, "#ff6b6b");
+          break;
+        }
+
+        if (enemy.y > canvas.height + 40) {
+          state.enemies.splice(i, 1);
+        }
+      }
+
+      for (let i = state.particles.length - 1; i >= 0; i--) {
+        const p = state.particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life -= 1;
+        if (p.life <= 0) state.particles.splice(i, 1);
+      }
+    }
+
+    function drawBackground() {
+      ctx.fillStyle = "#0b1020";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      for (const star of state.stars) {
+        ctx.fillStyle = "rgba(255,255,255,0.9)";
+        ctx.beginPath();
+        ctx.arc(star.x, star.y, star.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    function drawPlayer() {
+      ctx.fillStyle = "#6ee7ff";
+      ctx.fillRect(state.player.x, state.player.y, state.player.w, state.player.h);
+
+      ctx.fillStyle = "#dff9ff";
+      ctx.fillRect(state.player.x + state.player.w / 2 - 4, state.player.y - 10, 8, 12);
+    }
+
+    function drawBullets() {
+      ctx.fillStyle = "#ffd166";
+      for (const bullet of state.bullets) {
+        ctx.fillRect(bullet.x, bullet.y, bullet.w, bullet.h);
+      }
+    }
+
+    function drawEnemies() {
+      for (const enemy of state.enemies) {
+        ctx.fillStyle = "#ff6b6b";
+        ctx.beginPath();
+        ctx.arc(
+          enemy.x + enemy.w / 2,
+          enemy.y + enemy.h / 2,
+          enemy.w / 2,
+          0,
+          Math.PI * 2
+        );
+        ctx.fill();
+      }
+    }
+
+    function drawParticles() {
+      for (const p of state.particles) {
+        ctx.fillStyle = p.color;
+        ctx.fillRect(p.x, p.y, 3, 3);
+      }
+    }
+
+    function drawGameOver() {
+      if (state.running) return;
+
+      ctx.fillStyle = "rgba(0,0,0,0.5)";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.fillStyle = "#ffffff";
+      ctx.textAlign = "center";
+      ctx.font = "bold 38px Arial";
+      ctx.fillText("Game Over", canvas.width / 2, canvas.height / 2 - 20);
+
+      ctx.font = "bold 22px Arial";
+      ctx.fillText(`Score: ${state.score}`, canvas.width / 2, canvas.height / 2 + 18);
+
+      ctx.font = "bold 18px Arial";
+      ctx.fillText("Press Restart", canvas.width / 2, canvas.height / 2 + 52);
+    }
+
+    function render() {
+      drawBackground();
+      drawPlayer();
+      drawBullets();
+      drawEnemies();
+      drawParticles();
+      drawGameOver();
+    }
+
+    let lastTime = 0;
+    function loop(timestamp) {
+      const delta = timestamp - lastTime;
+      lastTime = timestamp;
+      update(delta);
+      render();
+      requestAnimationFrame(loop);
+    }
+
+    document.addEventListener("keydown", (e) => {
+      const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+      keys[key] = true;
+      if (e.code === "Space") {
+        e.preventDefault();
+        shoot();
+      }
+    });
+
+    document.addEventListener("keyup", (e) => {
+      const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+      keys[key] = false;
+    });
+
+    restartBtn.addEventListener("click", () => resetGame());
+
+    resetGame();
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>
